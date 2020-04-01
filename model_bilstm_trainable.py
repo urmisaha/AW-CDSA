@@ -66,7 +66,7 @@ is_cuda = torch.cuda.is_available()
 
 # If we have a GPU available, we'll set our device to GPU. We'll use this device variable later in our code.
 if is_cuda:
-    device = torch.device("cuda:2")
+    device = torch.device("cuda:1")
 else:
     device = torch.device("cpu")
 
@@ -74,19 +74,7 @@ def softmax(l):
     return np.exp(l)/np.sum(np.exp(l)) 
 
 # For Weighted Word Embeddings 
-with open("aspect_term_list.pkl", "rb") as f:
-    aspect_term_list = pickle.load(f)
-
-with open("aspect_weights.pkl", "rb") as f:
-    aspect_weights = pickle.load(f)
-
-with open("aspect_term_mapping.pkl", "rb") as f:
-    aspect_term_mapping = pickle.load(f)
-
-with open("./ontology/" + domain + "/concepts_list_new.pkl", "rb") as f:
-    concepts_list = pickle.load(f)
-
-with open("./ontology/" + domain + "/scores_new.json", "r") as f:
+with open("./ontology/" + domain + "_" + domain2 + "/scores.json", "r") as f:
     scores = json.load(f)
 
 word2idx = pickle.load(open(f'dataset/' + domain + '/word2idx.pkl', 'rb'))
@@ -105,24 +93,25 @@ class BiRNN(nn.Module):
         self.dropout = nn.Dropout(drop_prob)
 
         scores_matrix = torch.ones((vocab_size, 1))
-        weights_matrix = torch.ones((vocab_size, embedding_dim))
+        embs_matrix = torch.ones((vocab_size, embedding_dim))
         for v in target_vocab:
             try:
                 if v in ['_PAD','_UNK']:
-                    weights_matrix[word2idx[v]] = torch.from_numpy(cn_embs[0])
+                    embs_matrix[word2idx[v]] = torch.from_numpy(cn_embs[0])
                 else:
-                    weights_matrix[word2idx[v]] = torch.from_numpy(cn_embs[cn_word2idx[v]])
+                    embs_matrix[word2idx[v]] = torch.from_numpy(cn_embs[cn_word2idx[v]])
             except:
                 pass
-            # if v in scores.keys():
+            # if scores are assigned to domain terms
+            if v in scores.keys():
                 # scores_matrix[word2idx[v], 0] = 2
                 # scores_matrix[word2idx[v], 0] = np.random.random()*10
-                # scores_matrix[word2idx[v], 0] = scores[v]
-        # weights_matrix = torch.from_numpy(weights_matrix).double()
+                scores_matrix[word2idx[v], 0] = scores[v]
+        # embs_matrix = torch.from_numpy(embs_matrix).double()
         # print(scores_matrix)
-        # print(weights_matrix)
+        # print(embs_matrix)
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        self.embedding.weight = torch.nn.Parameter(weights_matrix)
+        self.embedding.weight = torch.nn.Parameter(embs_matrix)
         self.embedding.weight.requires_grad = False
         self.aspect_scores = nn.Embedding(vocab_size, 1)
         self.aspect_scores.weight = torch.nn.Parameter(scores_matrix)
@@ -241,14 +230,14 @@ for i in range(epochs):
                   "Loss: {:.6f}...".format(loss.item()),
                   "Val Loss: {:.6f}".format(np.mean(val_losses)))
             if np.mean(val_losses) < valid_loss_min:
-                torch.save(model.state_dict(), 'models/' + domain + '/state_dropout_one_layer' + weighted + '_' + dataamount + '_' + str(seed) + '.pt')
+                torch.save(model.state_dict(), 'models/' + domain + '/' + weighted + '_' + dataamount + '_' + str(seed) + '.pt')
                 print('Validation loss decreased ({:.6f} --> {:.6f}).  Saving model ...'.format(valid_loss_min,np.mean(val_losses)))
                 valid_loss_min = np.mean(val_losses)
 
 final_weights = model.aspect_scores.weight.squeeze(1).detach().cpu()                   # model.aspect_scores after training
 diff_weights = torch.abs(initial_weights - final_weights)
 
-f = open('logs/' + domain + '/onto_dropout_one_layer' + str(seed) + '_' + weighted + '_' + dataamount + '.csv', 'w+')
+f = open('logs/' + domain + '_' + domain2 + '/' + str(seed) + '_' + weighted + '_' + dataamount + '.csv', 'w+')
 f.write('term,initial,trained,diff')
 for v in target_vocab:
     if v in scores.keys():
@@ -257,7 +246,7 @@ for v in target_vocab:
 f.close()
 
 # Loading the best model
-model.load_state_dict(torch.load('models/' + domain + '/state_dropout_one_layer' + weighted + '_' + dataamount + '_' + str(seed) + '.pt'))
+model.load_state_dict(torch.load('models/' + domain + '/' + weighted + '_' + dataamount + '_' + str(seed) + '.pt'))
 
 test_losses = []
 num_correct = 0
